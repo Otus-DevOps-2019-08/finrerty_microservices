@@ -94,3 +94,141 @@ $ docker push finrerty/otus-reddit:1.0
 необходимо сохранить новое состояние контейнера в новый образ.  
   
 Новый же контейнер создается в полностью первозданном виде, сохранённом в образе.
+
+## Дополнительное задание №2
+
+Необходимо создать новый инфраструктурный репозиторий.  
+- Создадим папку infra, а в ней создадим 3 папки для packer, terraform и ansible:  
+$ mkdir infra  
+$ mkdir infra/docker && mkdir infra/terraform && mkdir infra/ansible
+
+- Настроим директорию ansible. Воспользуемся общепринятой структурой.
+
+- Теперь в директории environments создадим директорию Stage для описания среды.
+
+- Внутри разместим динамический инвентори inventory.gcp.yml, предварительно выгрузив из gcp ключ доступа к проекту в формате json.
+```
+plugin: gcp_compute
+projects:
+  - %my_project%
+zones:
+  - europe-west1-b
+filters: []
+auth_kind: serviceaccount
+service_account_file: "/home/vlad/.gcp/docker-692c9ab6d314.json"
+```
+
+- Настроим всю директорию ansible, добавим групповые переменные и проинициализиуем роль app с помощью команды ansible-galaxy  
+$ cd roles && ansible-galaxy init app
+
+- Опишем плейбук для установки Докера в app/tasks/docker.yml  
+ОЧЕНЬ ВАЖНО! Необходимо установить модуль pip и питоновский модуль Docker.
+```
+- name: Install https and cert software
+  apt:
+    update_cache: yes
+    name: "{{ packages }}"
+  vars:
+    packages:
+    - apt-transport-https
+    - ca-certificates
+    - curl
+    - gnupg-agent
+    - software-properties-common
+    - 
+  tags: docker
+
+- name: Add APT Key
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+  tags: docker
+
+- name: App Docker repository
+  apt_repository:
+    repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable
+    state: present
+  tags: docker
+
+- name: Update repos && Docker Installation
+  apt:
+    update_cache: yes
+    name: "{{ packages }}"
+  vars:
+    packages:
+    - docker-ce
+    - docker-ce-cli
+    - containerd.io
+  tags: docker
+
+- name: Install docker python module
+  pip:
+    name: docker
+  tags: docker
+```
+
+- Соберем образ убунты с докером с помощью packer  
+$ nano packer/app.json
+```
+{
+    "builders": [
+        {
+            "type": "googlecompute",
+            "project_id": "{{user `project_id`}}",
+            "image_name": "reddit-base-{{timestamp}}",
+            "image_family": "reddit-base",
+            "source_image_family": "{{user `source_image_family`}}",
+            "zone": "europe-west1-b",
+            "ssh_username": "vlad",
+            "machine_type": "{{user `machine_type`}}",
+            "image_description": "{{user `image_description`}}",
+            "disk_size": "{{user `disk_size`}}",
+	    "disk_type": "{{user `disk_type`}}",
+            "network": "default",
+	    "tags": "{{user `type`}}"
+        }
+    ],
+    "provisioners": [
+      {
+        "type": "ansible",
+        "playbook_file": "ansible/playbooks/packer_docker.yml",
+        "extra_arguments": ["--tags","docker"],
+        "ansible_env_vars": ["ANSIBLE_ROLES_PATH=ansible/roles"]
+      }
+    ]
+}
+```
+
+- Создадим variables.json со значениями переменных (в репозиторий загрузил variables.json.example для примера)
+
+- Настроим terraform. В папке terraform создадим директории stage и modules.
+
+- В папке stage создадим main.tf, variables.tf и terraform.tfvars (в репозиторий будет загружен terraform.tfvars.example)
+
+- В папке modules создадим модули app и vpc. Внутри создадим файлы main.tf, variables.tf и outputs.tf
+
+- Добавим переменную server_count в variables.tf и ${count.index} в название сервера, чтобы можно было выбирать количество создаваемых инстансов. По-умолчанию укажем значение 1.
+
+- Инициализиуем созданные модули и среду и создадим инстанс  
+$ cd terraform/stage && terraform init  
+$ terraform apply --auto-approve
+
+- Теперь напишем плейбук для разворота в созданной машине нашего докер образа
+```
+- name: Deploy App container
+  hosts: all
+  environment:
+    PYTHONPATH: "/home/path/.local/lib/python2.7/site-packages"
+  become: true
+  tasks:
+    - name: app container
+      docker_container:
+        name: reddit
+        image: finrerty/otus-reddit:1.0
+        state: started
+        ports: 
+          - "9292:9292"
+```
+
+- Прогоняем плейбук и сайт становится доступен  
+$ ansible-playbook playbooks/deploy.yml

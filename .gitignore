@@ -1,0 +1,21 @@
+#Файл с секретами
+packer/variables.json
+
+#файлы терраформа
+*.tfstate
+*.tfstate.*.backup
+*.tfstate.backup
+*.tfvars
+.terraform/
+
+#файлы ansible
+*.retry
+jdauphant.nginx
+
+#файлы vagrant
+.vagrant/
+*.log
+*.pyc
+.molecule
+.cache
+.pytest_cache
