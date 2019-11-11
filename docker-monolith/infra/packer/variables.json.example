@@ -1,0 +1,9 @@
+{
+    "project_id": "some-project",
+    "source_image_family": "ubuntu-1604-lts",
+    "machine_type": "f1-micro",
+    "image_description": "TEST DESCRIPTION",
+    "disk_size": "10",
+    "disk_type": "pd-standard",
+    "tags": "docker-machine"
+}

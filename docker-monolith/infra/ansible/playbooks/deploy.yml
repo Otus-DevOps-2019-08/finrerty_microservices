@@ -1,0 +1,13 @@
+- name: Deploy App container
+  hosts: all
+  environment:
+    PYTHONPATH: "/home/path/.local/lib/python2.7/site-packages"
+  become: true
+  tasks:
+    - name: app container
+      docker_container:
+        name: reddit
+        image: finrerty/otus-reddit:1.0
+        state: started
+        ports: 
+          - "9292:9292"

@@ -1,0 +1,41 @@
+- name: Install https and cert software
+  apt:
+    update_cache: yes
+    name: "{{ packages }}"
+  vars:
+    packages:
+    - apt-transport-https
+    - ca-certificates
+    - curl
+    - gnupg-agent
+    - software-properties-common
+    - python-pip
+  tags: docker
+
+- name: Add APT Key
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+  tags: docker
+
+- name: App Docker repository
+  apt_repository:
+    repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable
+    state: present
+  tags: docker
+
+- name: Update repos && Docker Installation
+  apt:
+    update_cache: yes
+    name: "{{ packages }}"
+  vars:
+    packages:
+    - docker-ce
+    - docker-ce-cli
+    - containerd.io
+  tags: docker
+
+- name: Install docker python module
+  pip:
+    name: docker
+  tags: docker

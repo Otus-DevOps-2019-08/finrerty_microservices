@@ -1,0 +1,8 @@
+plugin: gcp_compute
+projects:
+  - docker-258314
+zones:
+  - europe-west1-b
+filters: []
+auth_kind: serviceaccount
+service_account_file: "/home/vlad/.gcp/docker-692c9ab6d314.json"

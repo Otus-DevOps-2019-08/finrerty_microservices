@@ -1,0 +1,4 @@
+project          = "some-project"
+public_key_path  = "~/.ssh/vlad.pub"
+private_key_path = "~/.ssh/vlad"
+app_disk_image   = "reddit-base"

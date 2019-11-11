@@ -1,0 +1,7 @@
+---
+# defaults file for app
+db_host: 127.0.0.1
+env: local
+deploy_user: vlad
+mongod_port: 27017
+mongod_bind_ip: 127.0.0.1
