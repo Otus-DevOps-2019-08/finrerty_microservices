@@ -317,7 +317,56 @@ $ docker run -e POST_SERVICE_HOST=post_new -e COMMENT_SERVICE_HOST=comment_new \
 
 ## Дополнительное задание №2
 
-- Уменьшим размеры образов
+- Уменьшим размеры образов. Начнём с ./ui/Dockerfile:
+```
+FROM alpine:3.7
+RUN apk --update add --no-cache --virtual run-dependencies \
+    ruby ruby-dev ruby-json \
+    build-base \
+    bash \
+    && gem install bundler --no-ri --no-rdoc
 
+ENV APP_HOME /app
+RUN mkdir $APP_HOME
+WORKDIR $APP_HOME
+ADD Gemfile* $APP_HOME/
+RUN bundle install
+ADD . $APP_HOME
+ENV POST_SERVICE_HOST post
+ENV POST_SERVICE_PORT 5000
+ENV COMMENT_SERVICE_HOST comment
+ENV COMMENT_SERVICE_PORT 9292
+CMD ["puma"]
+```
 
+- Теперь ./comment/Dockerfile
+```
+FROM ruby:2.2-alpine
+RUN apk --update add --no-cache --virtual run-dependencies \
+    bash \
+    build-base
 
+ENV APP_HOME /app
+RUN mkdir $APP_HOME
+WORKDIR $APP_HOME
+ADD Gemfile* $APP_HOME/
+RUN bundle install
+COPY . $APP_HOME
+
+ENV COMMENT_DATABASE_HOST comment_db
+ENV COMMENT_DATABASE comments
+
+CMD ["puma"]
+```
+
+- Размеры образов значительно изменились.  
+Было
+```
+finrerty/ui         2.0                 3d83933037f7        2 hours ago          458MB
+finrerty/comment    1.0                 56c64bc005a0        4 hours ago          781MB
+```
+Стало
+```
+finrerty/ui         3.0                 adae5db97d32        11 minutes ago       218MB
+finrerty/comment    2.0                 af8864dd7226        About a minute ago   305MB
+```
