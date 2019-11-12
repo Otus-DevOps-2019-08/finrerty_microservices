@@ -66,7 +66,8 @@ chmod +x /usr/local/bin/docker-machine
 $ export GOOGLE_PROJECT=docker-258314  
 $ docker-machine create --driver google --google-machine-image \  
 https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \  
---google-machine-type n1-standard-1 --google-zone europe-west1-b docker-host
+--google-machine-type n1-standard-1 --google-zone europe-west1-b docker-host  
+$ eval $(docker-machine env docker-host)
 
 19. Создадим файлы mongod.conf, start.sh и db_config для создания контейнера с приложением
 
@@ -232,3 +233,91 @@ $ terraform apply --auto-approve
 
 - Прогоняем плейбук и сайт становится доступен  
 $ ansible-playbook playbooks/deploy.yml
+
+
+# HomeWork №13
+
+1. Создадим новую ветку  
+$ git checkout -b docker-3
+
+2. Подключимся к созданному ранее Docker host  
+$ eval $(docker-machine env docker-host)
+
+3. Скачаем архив и распакуем его в репозитории  
+$ wget https://github.com/express42/reddit/archive/microservices.zip \  
+  && unzip microservices.zip && rm microservices.zip && mv reddit microservices src
+
+4. Создадим докерфайлы для каждого микросервиса
+
+5. Скачаем последний образ MongoDB  
+$ docker pull mongo:latest
+
+6. Попробуем собрать образ post:1.0  
+$ docker build -t finrerty/post:1.0 ./post-py  
+Получаем ошибку. Для её устранения необходимо привести Dockerfile к следующему виду:
+```
+FROM python:3.6.0-alpine
+
+WORKDIR /app
+ADD . /app
+
+RUN apk add --no-cache --virtual .build-deps gcc musl-dev \
+    && pip install -r /app/requirements.txt \
+    && apk del --virtual .build-deps gcc musl-dev
+
+ENV POST_DATABASE_HOST post_db
+ENV POST_DATABASE posts
+
+CMD ["python3", "post_app.py"]
+```
+
+7. Теперь соберём все образы  
+$ docker build -t finrerty/post:1.0 ./post-py  
+$ docker build -t finrerty/comment:1.0 ./comment  
+$ docker build -t finrerty/ui:1.0 ./ui  
+
+8. Отметим, что сборка ui началась не с первого шага. Это связано с кэшированием уже выполненных ранее команд
+
+9. Создадим сеть  
+$ docker network create reddit
+
+10. Запустим контейнеры  
+$ docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest  
+$ docker run -d --network=reddit --network-alias=post finrerty/post:1.0  
+$ docker run -d --network=reddit --network-alias=comment finrerty/comment:1.0  
+$ docker run -d --network=reddit -p 9292:9292 finrerty/ui:1.0  
+
+11. Выполним первое задание со *. Описание выполнения размещено в нижней части раздела по текущему ДЗ.
+
+12. Редактируем файл ui/Dockerfile. Получаем образ меньшего размера  
+$ docker build -t finrerty/ui:2.0 ./ui
+
+13. Создадим volume для хранения БД  
+$ docker volume create reddit-db
+
+14. Укажем путь к нему для контейнера с БД при создании  
+$ docker run -d --network=reddit --network-alias=post_db \  
+  --network-alias=comment_db -v reddit_db:/data/db mongo:latest
+
+
+## Дополнительное задание №1
+
+- Запустим контейнеры с другими сетевыми алиасами и, соответственно, с другими значениями переменных  
+$ docker run -d --network=reddit --network-alias=post_db_new --network-alias=comment_db_new mongo:latest  
+$ docker run -e POST_DATABASE_HOST=post_db_new \  
+-d --network=reddit --network-alias=post_new finrerty/post:1.0  
+  
+$ docker run -e COMMENT_DATABASE_HOST=comment_db_new \  
+  -d --network=reddit --network-alias=comment_new finrerty/comment:1.0  
+  
+$ docker run -e POST_SERVICE_HOST=post_new -e COMMENT_SERVICE_HOST=comment_new \  
+  -d --network=reddit -p 9292:9292 finrerty/ui:1.0
+
+- Проверяем и убеждаемся, что всё работает. Значения переменных можно так же передавать через файл с помощью параметра --env-file
+
+## Дополнительное задание №2
+
+- Уменьшим размеры образов
+
+
+
