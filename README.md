@@ -370,3 +370,163 @@ finrerty/comment    1.0                 56c64bc005a0        4 hours ago         
 finrerty/ui         3.0                 adae5db97d32        11 minutes ago       218MB
 finrerty/comment    2.0                 af8864dd7226        About a minute ago   305MB
 ```
+
+# HomeWork №14
+
+1. Создадим новую ветку  
+$ git checkout -b docker-4
+
+2. Пересоздадим docker-host  
+$ export GOOGLE_PROJECT=docker-258314  
+$ docker-machine create --driver google \  
+  --google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \  
+  --google-machine-type n1-standard-1 \  
+  --google-zone europe-west1-b docker-host  
+$ eval $(docker-machine env docker-host)
+
+3. Создадим контейнер с предустановленными сетевыми пакетами, выполним ifconfig и удалим его  
+$ docker run -ti --rm --network none joffotron/docker-net-tools -c ifconfig  
+Теперь выполним:  
+$ docker-machine ssh docker-host ifconfig  
+Видим несколько сетевых интерфейсов с IP-адресами
+
+4. Попробуем сощдать несколько контейнеров с nginx  
+$ docker run --network host -d nginx && docker run --network host -d nginx && docker run --network host -d nginx  
+
+5. Контейнеры (кроме первого) сразу останавливаются. Выявим причину, посмотрев логи одного из контейнеров  
+$ docker ps -a
+```
+CONTAINER ID   IMAGE    COMMAND                  CREATED           STATUS                     PORTS   NAMES
+5824d5274061   nginx    "nginx -g 'daemon of…"   4 minutes ago     Exited (1) 4 minutes ago           clever_knuth
+c624f6e61f43   nginx    "nginx -g 'daemon of…"   4 minutes ago     Exited (1) 4 minutes ago           jolly_saha
+9fd509f714b0   nginx    "nginx -g 'daemon of…"   4 minutes ago     Up 4 minutes                       optimistic_matsumoto
+```
+$ docker logs 5824d5274061
+```
+nginx: [emerg] listen() to 0.0.0.0:80, backlog 511 failed (98: Address already in use)
+2019/11/16 08:49:32
+```
+
+6. Остановим наш работающий контейнер  
+$ docker kill 9fd509f714b0
+
+7. Удаляем все остальные контейнеры  
+$ docker rm $(docker ps -aq)
+
+8. Настроим на docker-host машине возможность удобного просмотра namespace'ов  
+$ docker-machine ssh docker-host sudo ln -s /var/run/docker/netns /var/run/netns
+
+9. Создадим контейнеры с host network и проверим список namespace'ов  
+$ docker run --network host -d nginx && docker run --network host -d nginx && docker run --network host -d nginx  
+$ docker-machine ssh docker-host sudo ip netns
+```
+default
+```
+
+10. Теперь выполним то же самое, но с none network  
+$ docker run --network none -d nginx && docker run --network none -d nginx && docker run --network none -d nginx  
+$ docker-machine ssh docker-host sudo ip netns
+```
+d69c74ad73de
+c0c75d2e6d25
+23a23905156d
+default
+```
+
+11. Создадим bridge-сеть и запустим контейнеры без сетевых алиасов. Убедимся, что ничего не работает  
+$ docker network create reddit  
+$ docker run -d --network=reddit docker mongo:latest  
+$ docker run -d --network=reddit finrerty/post:1.0  
+$ docker run -d --network=reddit finrerty/comment:2.0  
+$ docker run -d --network=reddit finrerty/ui:3.0  
+
+12. Теперь сделаем то же самое с правильными алиасами. Убедимся, что всё работает  
+$ docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest  
+$ docker run -d --network=reddit --network-alias=post finrerty/post:1.0  
+$ docker run -d --network=reddit --network-alias=comment finrerty/comment:2.0  
+$ docker run -d --network=reddit -p 9292:9292 finrerty/ui:3.0  
+
+13. Разделим приложение на 2 сети, создадим новые контейнеры и разнесём их по разным сетям  
+$ docker network create back_net --subnet=10.0.2.0/24  
+$ docker network create front_net --subnet=10.0.1.0/24  
+$ docker run -d --network=front_net -p 9292:9292 --name ui finrerty/ui:3.0  
+$ docker run -d --network=back_net --name post finrerty/post:1.0  
+$ docker run -d --network=back_net --name comment finrerty/comment:2.0  
+$ docker run -d --network=back_net --name mongo_db --network-alias=post_db --network-alias=comment_db mongo:latest  
+$ docker network connect front_net 0877bc81f885  
+$ docker network connect front_net 45d0946df238
+
+14. Установим bridge utils и изучим как устроена наша сеть и какие интерфейсы создают контейнеры  
+$ docker-machine ssh docker-host sudo apt-get update $$ docker-machine ssh docker-host sudo apt-get install bridge-utils
+
+15. Установим docker compose, создадим docker-compose.yml и на его основе соберем наше приложение  
+$ sudo pip install docker-compose  
+$ export USERNAME=finrerty  
+$ docker-compose up -d  
+$ docker-compose ps
+
+## Самостоятельное задание
+
+- Добавим сети
+```
+networks:
+  front_net:
+  back_net:
+```
+
+- Добавим сетевые алиасы к контейнеру MongoDB
+```
+services:
+  post_db:
+    image: mongo:3.2
+    volumes:
+      - post_db:/data/db
+    networks:
+      back_net:
+        aliases:
+        - post_db
+        - comment_db
+```
+
+- Создадим файл .env с переменными
+```
+USERNAME=finrerty
+POST_VERSION=1.0
+COMMENT_VERSION=2.0
+UI_VERSION=3.0
+APP_PORT=9292:9292
+```
+
+- Отредактируем docker-compose.yml
+```
+...
+ui:
+    build: ./ui
+    image: ${USERNAME}/ui:${UI_VERSION}
+    ports:
+      - ${APP_PORT}/tcp
+...
+post:
+    build: ./post-py
+    image: ${USERNAME}/post:${POST_VERSION}
+...
+comment:
+    build: ./comment
+    image: ${USERNAME}/comment:${COMMENT_VERSION}
+```
+
+- Чтобы поменять имя проекта, поменяем имя папки и создадим контейнеры заново  
+$ mv src src-test  
+$ docker kill $(docker ps -q)  
+$ docker-compose up -d  
+```
+Creating network "src_test_front_net" with the default driver
+Creating network "src_test_back_net" with the default driver
+Creating volume "src_test_post_db" with default driver
+Creating src_test_post_db_1 ... done
+Creating src_test_comment_1 ... done
+Creating src_test_post_1    ... done
+Creating src_test_ui_1      ... done
+```
+
+- Вернём всё-таки старое имя :)
