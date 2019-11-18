@@ -19,3 +19,6 @@ jdauphant.nginx
 .molecule
 .cache
 .pytest_cache
+
+#файлы Docker Compose
+.env
