@@ -640,3 +640,33 @@ gem 'rack-test'
 15. Создадим окружения dev, stage и prod
 
 16. Доработаем динамические окружения и определение рабочих веток
+
+
+## Дополнительное задание №1
+
+- Добавим в build разворот контейнера с приложением, для этого воспользуемся уже имеющимся образом
+```
+build_image:
+  image: docker:19.03.1
+  stage: build
+  script:
+    - docker run -d -p 9292:9292 finrerty/otus-reddit:1.0
+```
+
+
+## Дополнительное задание №2
+
+- Реализуем создание gitlab runner с помощью sh-скрипта. Параметры скрипта можно менять.
+```
+docker run -d --name gitlab-runner --restart always \
+  -v /srv/gitlab-runner/config:/etc/gitlab-runner \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  gitlab/gitlab-runner:latest
+docker exec -it gitlab-runner gitlab-runner register --run-untagged --locked=false
+```
+
+
+## Дополнительное задание №3
+
+- Выполнена настройка уведомлений на канал в Slack:  
+https://app.slack.com/client/T6HR0TUP3/CNCMZTBQ8
