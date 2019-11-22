@@ -644,13 +644,19 @@ gem 'rack-test'
 
 ## Дополнительное задание №1
 
-- Добавим в build разворот контейнера с приложением, для этого воспользуемся уже имеющимся образом
+- Создадим build контейнера с приложением. Для создания билда воспользуемся уже имеющимся Dockerfile из ДЗ docker-1
 ```
-build_image:
+build_job:
   image: docker:19.03.1
   stage: build
+  services:
+    - docker:dind
+  before_script:
+    - cd reddit
   script:
-    - docker run -d -p 9292:9292 finrerty/otus-reddit:1.0
+    - docker build -t finrerty/reddit:$CI_COMMIT_VERSION .
+    - docker login -u $DH_LOGIN -p $DH_PASSWORD
+    - docker push finrerty/reddit:$CI_COMMIT_VERSION
 ```
 
 
