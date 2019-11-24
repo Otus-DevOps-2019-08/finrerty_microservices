@@ -530,3 +530,149 @@ Creating src_test_ui_1      ... done
 ```
 
 - Вернём всё-таки старое имя :)
+
+## Дополнительное задание №1
+
+Файл docker-compose.override.yml позволяет добавлять дополнительные параметры разворота контейнеров. Указанные в нём инструкции имеют приоритет над инструкциями в docker-compose.yml
+
+- Создадим docker-compose.override.yml
+```
+version: '3.3'
+services:
+  post_db:
+    volumes:
+      - test_db:/data/db
+  ui:
+    volumes:
+      - ui:/home/dev/ui
+    command: ["puma","--debug","-w","2"]
+  comment:
+    volumes:
+      - comment:/home/dev/comment
+    command: ["puma","--debug","-w","2"]
+
+volumes:
+  test_db:
+  comment:
+  ui:
+```
+
+- Теперь при развороте нашего приложения у нас будут создаваться тестовые директории для БД и ui, а ruby будет запускаться в режиме debug с двумя воркерами
+
+- Убеждаемся, что всё работает  
+$ docker-compose up -d
+
+
+# HomeWork №15
+
+1. Создадим новую ветку  
+$ git checkout -b gitlab-ci-1
+
+2. Для создания виртуальной машины воспользуемся Docker Machine. Создадим docker-host (HDD 50ГБ)  
+$ export GOOGLE_PROJECT=docker-258314  
+$ docker-machine create --driver google --google-machine-image \  
+https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \  
+--google-machine-type n1-standard-1 --google-zone europe-west1-b --google-disk-size 50 docker-host  
+$ eval $(docker-machine env docker-host)
+
+3. Создадим необходимые директории  
+$ docker-machine ssh docker-host sudo mkdir -p /srv/gitlab/config /srv/gitlab/data /srv/gitlab/logs  
+
+4. Создадим в нашем репозитории docker-compose.yml и исправим в нём IP-адрес  
+$ mkdir gitlab-ci && cd gitlab-ci && wget \  
+https://gist.github.com/Nklya/c2ca40a128758e2dc2244beb09caebe1
+
+5. Запустим gitlab-ci, убедимся, что всё работает.  
+$ docker-compose up -d
+
+6. Создадим пароль для root, отключим возможность регистрации новых пользователей
+
+7. Создадим группу homework и проект example
+
+8. Добавим remote в наш репозиторий  
+$ git remote add gitlab http://35.195.250.202/homework/example.git  
+$ git push gitlab gitlab-ci-1
+
+9. Создадим файл .gitlab-ci.yml (файл загружен в рабочий репозиторий microservices в папку gitlab-ci)
+
+10. Зарегистрируем runner  
+$ docker run -d --name gitlab-runner --restart always \  
+  -v /srv/gitlab-runner/config:/etc/gitlab-runner \  
+  -v /var/run/docker.sock:/var/run/docker.sock \  
+  gitlab/gitlab-runner:latest  
+$ docker exec -it gitlab-runner gitlab-runner register --run-untagged --locked=false
+
+11. Находим в настройках (Settings => CI/CD => Runners) наш runner - yYNL11K8 (my-runner)
+
+12. Убеждаемся, что пайплайн запустился. Теперь загрузим код reddit в репозиторий  
+$ git clone https://github.com/express42/reddit.git && rm -rf ./reddit/.git  
+$ git add reddit/  
+$ git commit -m “Add reddit app”  
+$ git push gitlab gitlab-ci-1
+
+13. Созаздим simpletest.rb в папке reddit
+```
+require_relative './app'
+require 'test/unit'
+require 'rack/test'
+
+set :environment, :test
+
+class MyAppTest < Test::Unit::TestCase
+  include Rack::Test::Methods
+
+  def app
+    Sinatra::Application
+  end
+
+  def test_get_request
+    get '/'
+    assert last_response.ok?
+  end
+end
+```
+
+14. Добавим в reddit/Gemfile строку
+```
+gem 'rack-test'
+```
+
+15. Создадим окружения dev, stage и prod
+
+16. Доработаем динамические окружения и определение рабочих веток
+
+
+## Дополнительное задание №1
+
+- Создадим build контейнера с приложением. Для создания билда воспользуемся уже имеющимся Dockerfile из ДЗ docker-1
+```
+build_job:
+  image: docker:19.03.1
+  stage: build
+  services:
+    - docker:dind
+  before_script:
+    - cd reddit
+  script:
+    - docker build -t finrerty/reddit:$CI_COMMIT_VERSION .
+    - docker login -u $DH_LOGIN -p $DH_PASSWORD
+    - docker push finrerty/reddit:$CI_COMMIT_VERSION
+```
+
+
+## Дополнительное задание №2
+
+- Реализуем создание gitlab runner с помощью sh-скрипта. Параметры скрипта можно менять.
+```
+docker run -d --name gitlab-runner --restart always \
+  -v /srv/gitlab-runner/config:/etc/gitlab-runner \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  gitlab/gitlab-runner:latest
+docker exec -it gitlab-runner gitlab-runner register --run-untagged --locked=false
+```
+
+
+## Дополнительное задание №3
+
+- Выполнена настройка уведомлений на канал в Slack:  
+https://app.slack.com/client/T6HR0TUP3/CNCMZTBQ8
