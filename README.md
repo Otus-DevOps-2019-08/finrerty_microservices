@@ -676,3 +676,100 @@ docker exec -it gitlab-runner gitlab-runner register --run-untagged --locked=fal
 
 - Выполнена настройка уведомлений на канал в Slack:  
 https://app.slack.com/client/T6HR0TUP3/CNCMZTBQ8
+
+
+# HomeWork №16
+
+1. Создадим новую ветку  
+$ git checkout -b monitoring-1
+
+2. Создадим правило файрвола для Prometheus  
+$ gcloud compute firewall-rules create prometheus-default --allow tcp:9090 
+
+3. Создадим docker-host  
+$ export GOOGLE_PROJECT=docker-258314  
+$ docker-machine create --driver google \  
+  --google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \  
+  --google-machine-type n1-standard-1 \  
+  --google-zone europe-west1-b docker-host  
+$ eval $(docker-machine env docker-host)
+
+4. Создадим контейнер с prometheus  
+$ docker run --rm -p 9090:9090 -d --name prometheus prom/prometheus:v2.1.0
+
+5. Изменим структуру нашего репозитория. Перенесём docker-compose.*, .env* файлы и папку docker-monolith в новую директорию docker
+
+6. Создадим папку monitoring/prometheus, в ней создадим Dockerfile и конфигурационный файл  
+$ mkdir monitoring && mkdir monitoring/prometheus  
+$ nano Dockerfile
+```
+FROM prom/prometheus:v2.1.0
+ADD prometheus.yml /etc/prometheus/
+```
+$ wget https://gist.github.com/Nklya/bfe2d817f72bc6376fb7d05507e97a1d#file-prometheus-yml
+
+7. Соберём все образы сервисов  
+$ for i in ui post-py comment; do cd src/$i; bash docker_build.sh; cd -; done
+
+8. Добавим новый сервис в файл docker/docker-compose.yml
+```
+services:
+...
+  prometheus:
+    image: ${USERNAME}/prometheus
+    ports:
+      - ${PROMETHEUS_PORT}/tcp
+    volumes:
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention=1d'
+
+volumes:
+  prometheus_data:
+```
+
+9. Удалим из этого файла директиву build, а так же поменяем значения переменных для директивы image в файле .env
+
+10. Теперь добавим секцию networks
+```
+networks:
+      - front_net
+      - back_net
+```
+
+11. Развернём наше приложение и мониторинг  
+$ cd docker && docker-compose up -d
+
+12. Проверим работу мониторинга. Остановим сервис, проверим графики и потом запустим его заново  
+$ docker-compose stop post  
+$ docker-compose start post  
+
+13. Добавим node exporter  
+docker-compose.yml
+```
+node-exporter:
+    image: prom/node-exporter:v0.15.2
+    user: root
+    networks:
+      - front_net
+      - back_net
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.ignored-mount-points="^/(sys|proc|dev|host|etc)($$|/)"'
+```
+prometheus.yml
+```
+- job_name: 'node'
+  static_configs:
+    - targets:
+      - 'node-exporter:9100' 
+```
+
+14. Запушим образы на DockerHub (https://hub.docker.com/u/finrerty)
