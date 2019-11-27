@@ -52,6 +52,18 @@ services:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
       - '--collector.filesystem.ignored-mount-points="^/(sys|proc|dev|host|etc)($$|/)"'
+  mongodb-exporter:
+    image: bitnami/mongodb-exporter:latest
+    ports:
+      - 9216:9216
+    networks:
+      - back_net
+      - front_net
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    networks:
+      - back_net
+      - front_net
 
 volumes:
   post_db:

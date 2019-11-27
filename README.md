@@ -773,3 +773,54 @@ prometheus.yml
 ```
 
 14. Запушим образы на DockerHub (https://hub.docker.com/u/finrerty)
+
+
+## Дополнительное задание №1
+
+- Добавляем mongodb-exporter. Для начала отредактируем docker-compose.yml. Загрузим образ. Укажем сети и порт.
+```
+mongodb-exporter:
+    image: bitnami/mongodb-exporter:latest
+    ports:
+      - 9216:9216
+    networks:
+      - back_net
+      - front_net
+```
+
+- Теперь добавим новый job в prometheus.yml
+```
+  - job_name: 'mongod'
+    static_configs:
+      - targets:
+        - 'post_db:27017'
+```
+
+- Проверим, что БД доступна
+
+## Дополнительное задание №2
+
+- Добавляем мониторинг http наших сервисов с помощью blackbox exporter  
+docker-compose.yml
+```
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    networks:
+      - back_net
+      - front_net
+```
+
+- Теперь добавляем job  
+prometheus.yml
+```
+  - job_name: 'blackbox-tcp_check'
+    static_configs:
+      - targets:
+        - 'ui:80'
+        - 'comment:80'
+        - 'post:80'
+```
+
+## Дополнительное задание №3
+
+- Реализован Makefile и размещён в корне репозитория
