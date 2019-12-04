@@ -824,3 +824,153 @@ prometheus.yml
 ## Дополнительное задание №3
 
 - Реализован Makefile и размещён в корне репозитория
+
+
+# HomeWork №17
+
+1. Создадим новую ветку  
+$ git checkout -b monitoring-2
+
+2. Создадим docker-host  
+$ export GOOGLE_PROJECT=docker-258314  
+$ docker-machine create --driver google \  
+  --google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \  
+  --google-machine-type n1-standard-1 \  
+  --google-zone europe-west1-b docker-host  
+$ eval $(docker-machine env docker-host)
+
+3. Разделим docker-compose.yml на 2 файла, создав новый docker-compose-monitoring.yml
+
+4. Развернём сервис cadvisor, для этого дополним создание контейнера в docker-compose-monitoring.yml
+```
+  cadvisor:
+    image: google/cadvisor:v0.29.0
+    volumes:
+      - '/:/rootfs:ro'
+      - '/var/run:/var/run:rw'
+      - '/sys:/sys:ro'
+      - '/var/lib/docker/:/var/lib/docker:ro'
+    ports:
+      - '8080:8080'
+    networks:
+      - back_net
+```
+и создание сервиса в prometheus.yml
+```
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets:
+        - 'cadvisor:8080'
+```
+
+5. Добавляем правило фаерволла для cadvisor  
+$ gcloud compute firewall-rules create cadvisor-default --allow tcp:8080
+
+6. Пересобираем контейнер с мониторингом, разворачиваем его и приложение  
+$ cd monitoring/prometheus  
+$ export USER_NAME=finrerty  
+$ docker build -t $USER_NAME/prometheus .  
+$ cd ../../docker/  
+$ docker-compose up -d  
+$ docker-compose -f docker-compose-monitoring.yml up -d
+
+7. Добавляем сервис Grafana  
+```
+  grafana:
+    image: grafana/grafana:5.0.0
+    volumes:
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=secret
+    depends_on:
+      - prometheus
+    ports:
+      - 3000:3000
+    networks:
+      - back_net
+```
+
+8. Запускаем его и создаём правило для фаерволла  
+$ docker-compose -f docker-compose-monitoring.yml up -d grafana
+$ gcloud compute firewall-rules create grafana-default --allow tcp:3000
+
+9. Импортируем дашборд Docker and system monitoring
+
+10. Создадим 2 новых дэшборда: UI http requests и Rate of UI Requests with Error.
+
+11. Напишем функцию графика, фиксирующую успешные входы  
+```
+rate(ui_request_count{http_status=~"^[2].*"}[1m])
+```
+
+12. Реализуем график-гистограмму и вычислим 95й процентиль времени ответа на запрос
+
+13. Создадим новый дашборд для мониторинга бизнес логики и создадим 2 графика
+```
+rate(post_count[1h])
+```
+```
+rate(comment_count[1h])
+```
+
+14. Настроим алертинг в канал Slack - https://app.slack.com/client/T6HR0TUP3/CNCMZTBQ8
+
+15. Соберем образ alertmanager из Dockerfile  
+$ docker build -t $USER_NAME/alertmanager .
+
+16. Добавим новый сервис в docker-compose-monitoring.yml
+```
+  alertmanager:
+    image: ${USER_NAME}/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/config.yml'
+    ports:
+      - 9093:9093
+    networks:
+      - back_net
+```
+
+17. Создадим alerts.yml
+```
+groups:
+  - name: alert.rules
+    rules:
+    - alert: InstanceDown
+      expr: up == 0
+      for: 1m
+      labels:
+        severity: page
+      annotations:
+        description: '{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 1 minute'
+        summary: 'Instance {{ $labels.instance }} down'
+```
+
+18. Дополним Dockerfile prometheus и файл prometheus.yml
+```
+FROM prom/prometheus:v2.1.0
+ADD prometheus.yml /etc/prometheus/
+ADD alerts.yml /etc/prometheus/
+```
+
+```
+rule_files:
+  - "alerts.yml"
+
+alerting:
+  alertmanagers:
+  - scheme: http
+    static_configs:
+    - targets:
+      - "alertmanager:9093"
+```
+
+19. Проверим работу алертинга, сбщ пришло в чат - https://app.slack.com/client/T6HR0TUP3/CNCMZTBQ8
+
+20. Пушим всё на DockerHub (https://hub.docker.com/u/finrerty)   
+$ make push_all
+
+
+## Дополнительные задания
+
+- Добавлена сборка и пуш алертменеджера в Makefile
