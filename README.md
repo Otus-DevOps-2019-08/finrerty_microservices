@@ -974,3 +974,166 @@ $ make push_all
 ## Дополнительные задания
 
 - Добавлена сборка и пуш алертменеджера в Makefile
+
+
+# HomeWork №18
+
+1. Создадим новую ветку  
+$ git checkout -b logging-1
+
+2. Создадим docker-host  
+$ export GOOGLE_PROJECT=docker-258314  
+$ docker-machine create --driver google \  
+  --google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \  
+  --google-machine-type n1-standard-1 \  
+  --google-zone europe-west1-b \  
+  --google-open-port 5601/tcp \  
+  --google-open-port 9411/tcp \  
+  logging  
+$ eval $(docker-machine env docker-host)  
+$ export USER_NAME=finrerty
+
+3. Соберем образы с микросервисами приложения  
+$ make build_all
+
+4. Создадим docker-compose-logging.yml. Чтобы всё заработало, к разделу elasticsearch добавим:
+```
+    environment:
+      - node.name=elasticsearch
+      - cluster.name=docker-cluster
+      - node.master=true
+      - cluster.initial_master_nodes=elasticsearch
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+      memlock:
+        soft: -1
+        hard: -1
+    expose:
+      - 9200
+      - 9300
+    volumes:
+      - efk-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+```
+
+5. Так же необходимо создать общую сеть
+```
+networks:
+  log_net:
+```
+
+6. Создадим директорию logging/fluentd с докерфайлом и fluent.conf
+
+7. Соберем docker image для fluentd  
+$ docker build -t $USER_NAME/fluentd .
+
+8. Подправим .env-файл (изменения отражены в .env.example)
+
+9. Определим драйвер для логирования для сервиса post внутри compose-файла
+```
+…
+  post:
+…
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: localhost:24224
+  tag: service.post
+```
+
+10. Подправим Dockerfile сервиса comment
+```
+RUN tzdata \
+```
+
+11. Поднимем инфраструктуры  
+$ cd docker && docker-compose -f docker-compose-logging.yml up -d  
+$ docker-compose up -d
+
+12. Проверим, что всё корректно работает. Изучим возможности Kibana.
+
+13. Добавим фильтр для парсинга json логов, приходящих от post сервиса, в конфиг fluentd
+```
+<source>
+  @type forward
+  port 24224
+  bind 0.0.0.0
+</source>
+
+<filter service.post>
+  @type parser
+  format json
+  key_name log
+</filter>
+<match *.**>
+  @type copy
+
+```
+
+14. Убедимся, что логи структурированы
+
+15. Добавим к сервису ui логгирование
+```
+  ui:
+    image: ${USERNAME}/ui:${UI_VERSION}
+    environment: 
+      - POST_SERVICE_HOST=post
+      - POST_SERVICE_PORT=5000
+      - COMMENT_SERVICE_HOST=comment
+      - COMMENT_SERVICE_PORT=9292
+    ports:
+      - ${APP_PORT}/tcp
+    logging: 
+      driver: "fluentd"
+      options:
+        fluentd-address: localhost:24224
+        tag: service.ui
+    networks:
+      - front_net
+```
+
+16. Перезапустим сервис  
+$ docker-compose stop ui  
+$ docker-compose rm ui  
+$ docker-compose up -d
+
+17. Добавим grok-шаблоны для парсинга логов
+```
+<filter service.ui>
+  @type parser
+  format grok
+  grok_pattern %{RUBY_LOGGER}
+  key_name log
+</filter>
+
+<filter service.ui>
+  @type parser
+  format grok
+  grok_pattern service=%{WORD:service} \| event=%{WORD:event} \| request_id=%{GREEDYDATA:request_id} \| message='%{GREEDYDATA:message}'
+  key_name message
+  reserve_data true
+</filter>
+```
+
+18. Выполним задание со *, распарсив message. Выполнение описано в пункте "Дополнительное задание №1"
+
+
+## Дополнительное задание №1
+
+- Добавим ещё один grok-фильтр
+```
+<filter service.ui>
+  @type parser
+  format grok
+  grok_pattern service=%{WORD:service} \| event=%{WORD:event} \| path=%{GREEDYDATA:path} \| request_id=%{GREEDYDATA:request_id} \| remote_addr=%{IP:remote_addr} \| method=%{SPACE}%{GREEDYDATA:method} response_status=%{GREEDYDATA:response_status}
+  key_name message
+  reserve_data true
+</filter>
+```
+
