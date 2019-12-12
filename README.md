@@ -1160,4 +1160,3 @@ $ docker-compose -f docker-compose-logging.yml up -d
   reserve_data true
 </filter>
 ```
-
