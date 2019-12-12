@@ -990,7 +990,7 @@ $ docker-machine create --driver google \
   --google-open-port 5601/tcp \  
   --google-open-port 9411/tcp \  
   logging  
-$ eval $(docker-machine env docker-host)  
+$ eval $(docker-machine env logging)  
 $ export USER_NAME=finrerty
 
 3. Соберем образы с микросервисами приложения  
@@ -1028,7 +1028,8 @@ networks:
   log_net:
 ```
 
-6. Создадим директорию logging/fluentd с докерфайлом и fluent.conf
+6. Создадим директорию logging/fluentd с докерфайлом и fluent.conf и настроим хост logging:  
+$ docker-host ssh logging sudo sysctl -w vm.max_map_count=262144
 
 7. Соберем docker image для fluentd  
 $ docker build -t $USER_NAME/fluentd .
@@ -1123,6 +1124,29 @@ $ docker-compose up -d
 
 18. Выполним задание со *, распарсив message. Выполнение описано в пункте "Дополнительное задание №1"
 
+19. Добавим zipkin в compose-файлы  
+docker-compose-logging.yml
+```
+services:
+  zipkin:
+    image: openzipkin/zipkin
+    ports:
+      - "9411:9411"
+```
+docker-compose.yml
+```
+- ZIPKIN_ENABLED=${ZIPKIN_ENABLED}
+```
+.env
+```
+ZIPKIN_ENABLED=true
+```
+
+20. Пересоздадим всё  
+$ docker-compose down  
+$ docker-compose -f docker-compose-logging.yml down  
+$ docker-compose up -d  
+$ docker-compose -f docker-compose-logging.yml up -d
 
 ## Дополнительное задание №1
 
