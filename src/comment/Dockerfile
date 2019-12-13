@@ -3,6 +3,7 @@ ENV APP_HOME /app
 RUN apk --update add --no-cache --virtual run-dependencies \
     bash \
     build-base \
+    tzdata \
     && mkdir $APP_HOME
 
 WORKDIR $APP_HOME
