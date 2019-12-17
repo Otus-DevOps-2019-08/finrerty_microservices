@@ -1160,3 +1160,15 @@ $ docker-compose -f docker-compose-logging.yml up -d
   reserve_data true
 </filter>
 ```
+
+
+# HomeWork №19
+
+- Пройден ручной разворот кластера Kubernetes по инструкции:  
+https://github.com/kelseyhightower/kubernetes-the-hard-way/
+
+- Единственным отличием от указанной инструкции является использование одного worker вместо трёх. 3 не создались из-за условий триалки.
+
+- Все созданные в процессе файлы сохранены в директории kubernetes/the_hard_way
+
+- В директории kubernetes/reddit созданы базовые (нерабочие) шаблоны файлов разворота приложения
