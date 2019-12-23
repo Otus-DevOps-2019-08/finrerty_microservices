@@ -1172,3 +1172,203 @@ https://github.com/kelseyhightower/kubernetes-the-hard-way/
 - Все созданные в процессе файлы сохранены в директории kubernetes/the_hard_way
 
 - В директории kubernetes/reddit созданы базовые (нерабочие) шаблоны файлов разворота приложения
+
+
+# HomeWork №20
+
+1. Создадим новую ветку  
+$ git checkout -b kubernetes-2
+
+2. Kubectl и VirtualBox уже были установлены ранее. Ставим Minikube  
+$ curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube_1.6.2.deb  && sudo dpkg -i minikube_1.6.2.deb
+
+3. Создадим и запустим ui-deployment.yml и comment-deployment.yml  
+$ kubectl apply -f ui-deployment.yml  
+$ kubectl apply -f comment-deployment.yml
+
+4. Создадим post-deployment.yml
+```
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: post
+  labels:
+    app: reddit
+    component: post
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: reddit
+      component: post
+  template:
+    metadata:
+      name: post
+      labels:
+        app: reddit
+        component: post
+    spec:
+      containers:
+      - image: finrerty/post
+        name: post
+```
+
+5. Создадим mongo-deployment.yml и запустим  
+$ kubectl apply -f mongo-deployment.yml
+
+6. Теперь необходимо создать сервисы. Для начала - comment-service.yml
+```
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: comment
+  labels:
+    app: reddit
+    component: post
+spec:
+  ports:
+  - port: 9292
+    protocol: TCP
+    targetPort: 9292
+  selector:
+    app: reddit
+    component: comment
+```
+
+7. Затем - post-service.yml
+```
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: post
+  labels:
+    app: reddit
+    component: post
+spec:
+  ports:
+  - port: 5000
+    protocol: TCP
+    targetPort: 5000
+  selector:
+    app: reddit
+    component: post
+```
+
+8. Так же создадим mongodb-service.yml и задеплоим все новые сущности  
+$ kubectl apply -f .
+
+9. Убедимся, что база не работает. Необходимо создать сервисы, сохраненные в переменных Dockerfile  
+comment-mongodb-service.yml
+```
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: comment-db
+  labels:
+    app: reddit
+    component: mongo
+    comment-db: "true"
+spec:
+  ports:
+  - port: 27017
+    protocol: TCP
+    targetPort: 27017
+  selector:
+    app: reddit
+    component: mongo
+    comment-db: "true"
+```
+post-mongodb-service.yml
+```
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: post-db
+  labels:
+    app: reddit
+    component: mongo
+    post-db: "true"
+spec:
+  ports:
+  - port: 27017
+    protocol: TCP
+    targetPort: 27017
+  selector:
+    app: reddit
+    component: mongo
+    post-db: "true"
+```
+
+10. Так же обновим mongo-deployment.yml, добавив информацию о comment-db и post-db в labels
+```
+labels:
+  comment-db: "true"
+  post-db: "true"
+```
+
+11. И добавим переменные окружения аналогичные указанным в Dockerfile'ах в Deployment POD'ов
+```
+        env:
+        - name: POST_DATABASE_HOST
+          value: post-db
+```
+```
+        env:
+        - name: COMMENT_DATABASE_HOST
+          value: comment-db
+```
+
+12. Обновляем и создаём все объекты, а так же удаляем лишнее  
+$ kubectl apply -f . && kubectl delete -f mongodb-service.yml
+
+13. Теперь необходимо разрешить доступ к нашему приложению извне, допишем NodePort
+```
+spec:
+  type: NodePort
+  ports:  
+  - nodePort: 32092
+    port: 9292
+    protocol: TCP
+    targetPort: 9292
+```
+
+14. Проверим, что всё работает. Просмотрим dashboard.
+
+15. Создадим новый Namespace - dev. Опишем его в файле dev-namespace.yml
+```
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+```
+
+16. Запустим приложение в dev Namespace  
+$ kubectl apply -n dev -f .
+
+17. Допишем указание значения Namespace'a на главную страницу сервиса в ui-deployment.yml
+```
+    spec:
+      containers:
+      - image: finrerty/ui
+        name: ui
+        env:
+        - name: ENV
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+```
+
+18. Создадим кластер kubernetes в GCP и получим к нему доступ из командной строки  
+$ gcloud container clusters get-credentials cluster-1 --zone europe-west1-b --project docker-258314
+
+19. Создадим Namespace и наше приложение в этом Namespace  
+$ kubectl apply -f dev-namespace.yml && kubectl apply -f . -n dev
+
+20. Добавляем правило Firewall и убеждаемся, что наше приложение работает  
+$ gcloud compute firewall-rules create reddit-k8s-default --allow tcp:32092
