@@ -1460,3 +1460,230 @@ module "gke" {
   }
 }
 ```
+
+
+# HomeWork №21
+
+1. Создадим новую ветку  
+$ git checkout -b kubernetes-3
+
+2. Убедимся, что при отключённых DNS-сервисах не работает связность подов  
+$ kubectl scale deployment --replicas 0 -n kube-system kube-dnsautoscaler  
+$ kubectl scale deployment --replicas 0 -n kube-system kube-dns  
+$ kubectl exec -ti -n dev <имя любого pod-а> ping comment
+
+3. Включим сервисы обратно  
+$ kubectl scale deployment --replicas 1 -n kube-system kube-dnsautoscaler 
+
+4. Поменяем в сервисе UI тип с NodePort на LoadBalancer
+
+5. Убедимся, что наше приложение доступно по 80 порту
+
+6. Теперь создадим Ingress, для этого вернём изменим типа UI-сервиса обратно на NodePort и создадим ui-ingress.yml
+```
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: ui
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /*
+        backend:
+          serviceName: ui
+          servicePort: 9292
+```
+
+7. Теперь добавим TLS, создадим сертификаты и загрузим в kubernetes  
+$ openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout tls.key -out tls.crt -subj "/CN=34.107.133.195"  
+$ kubectl create secret tls ui-ingress --key tls.key --cert tls.crt -n dev  
+
+8. И перенастроим Ingress на приём только HTTPS-траффика
+```
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: ui
+  annotations:
+    kubernetes.io/ingress.allow-http: "false"
+spec:
+  tls:
+  - secretName: ui-ingress
+  backend:
+    serviceName: ui
+    servicePort: 9292
+```
+
+9. Применим все изменения  
+$ kubectl apply -f ui-ingress.yml -n dev
+
+10. Опишем Secret в виде Kubernetes-манифеста (реализация в разделе Дополнительное задание №1)
+
+11. Включим network-policy для GKE  
+$ gcloud beta container clusters update cluster-1 --zone=europe-west1-b --update-addons=NetworkPolicy=ENABLED  
+$ gcloud beta container clusters update cluster-1 --zone=europe-west1-b --enable-network-policy
+
+12. Создадим mongo-network-policy.yml
+```
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-db-traffic
+  labels:
+    app: reddit
+spec:
+  podSelector:
+    matchLabels:
+      app: reddit
+      component: mongo
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: reddit
+          component: comment
+```
+
+13. Применим изменения. У нас перестали отображаться посты  
+$ kubectl apply -f mongo-network-policy.yml -n dev
+
+14. Внесём изменения в mongo-network-policy.yml для корректной работы post-сервиса
+```
+    - podSelector:
+        matchLabels:
+          app: reddit
+          component: post
+```
+
+15. Убедимся, что текущий диск создаётся временно и удаляется при пересоздании пода. Создадим пост и пересоздадим под  
+$ kubectl delete -f mongo-deployment.yml -n dev && kubectl apply -f mongo-deployment.yml -n dev
+
+16. Пост пропал. Во избежание подобного создадим новый диск в Google Cloud  
+$ gcloud compute disks create --size=5GB --zone=europe-west1-b reddit-mongo-disk
+
+17. Изменим mongo-deployment.yml
+```
+      containers:
+      - image: mongo:latest
+        name: mongo
+        volumeMounts:
+        - name: mongo-gce-pd-storage
+          mountPath: /data/db
+      volumes:
+      - name: mongo-persistent-storage
+        emptyDir: {}
+        volumes:
+      - name: mongo-gce-pd-storage
+        gcePersistentDisk:
+          pdName: reddit-mongo-disk
+          fsType: ext4
+```
+
+18. Проверим, что после пересоздания пода пост не исчезает  
+$ kubectl delete deploy mongo -n dev  
+$ kubectl apply -f mongo-deployment.yml -n dev
+
+19. Создадим описание PersistentVolume
+```
+---
+    apiVersion: v1
+    kind: PersistentVolume
+    metadata:
+      name: reddit-mongo-disk
+    spec:
+      capacity:
+        storage: 25Gi
+      accessModes:
+        - ReadWriteOnce
+      persistentVolumeReclaimPolicy: Retain
+      gcePersistentDisk:
+        fsType: "ext4" 
+        pdName: "reddit-mongo-disk"
+```
+
+20. Добавим его в кластер  
+$ kubectl apply -f mongo-volume.yml -n dev
+
+21. Создадим описание PersistentVolumeClaim
+```
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: mongo-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 15Gi
+```
+
+22. Добавим его к нашему поду с БД, для этого отредактируем mongo-deployment.yml
+```
+      volumes:
+      - name: mongo-gce-pd-storage
+        persistentVolumeClaim:
+          claimName: mongo-pvc
+```
+
+23. Создадим StorageClass Fast
+storage-fast.yml
+```
+---
+kind: StorageClass
+apiVersion: storage.k8s.io/v1beta1
+metadata:
+  name: fast
+provisioner: kubernetes.io/gce-pd
+parameters:
+  type: pd-ssd
+```
+
+24. Создадим PersistentVlolumeClaim для запроса диского пространства данного класса
+```
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: mongo-pvc-dynamic
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: fast
+  resources:
+    requests:
+      storage: 10Gi
+```
+
+25. Добавим данный диск к нашей БД в файле mongo-deployment.yml
+```
+claimName: mongo-pvc-dynamic
+```
+
+
+## Дополнительное задание №1
+
+- Зашифруем содержимое файлов сертификатов с помощью base64  
+$ cat tls.crt | base64  
+$ cat tls.key | base64
+
+- Создадим secret-certs.yml
+```
+apiVersion: v1
+kind: Secret
+metadata:
+  name:  ui-ingress
+  namespace: dev
+type: kubernetes.io/tls
+data:
+  tls.crt: %BASE64%
+  tls.key: %BASE64%
+```
+
