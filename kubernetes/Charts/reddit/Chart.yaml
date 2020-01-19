@@ -1,0 +1,7 @@
+name: reddit
+version: 0.1.0
+description: sample reddit application
+maintainers:
+- name: Me
+  email: finrerty@gmail.com
+appVersion: 1.0

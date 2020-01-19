@@ -1687,3 +1687,126 @@ data:
   tls.key: %BASE64%
 ```
 
+# HomeWork №22
+
+1. Создадим новую ветку  
+$ git checkout -b kubernetes-4
+
+2. Установим Helm  
+$ wget https://get.helm.sh/helm-v2.13.1-linux-amd64.tar.gz  
+$ tar xfvz helm-v2.13.1-linux-amd64.tar.gz  
+$ sudo mv linux-amd64/helm /usr/bin
+
+3. Установим и запустим Tiller  
+$ nano tiller.yml
+```
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tiller
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: tiller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: tiller
+    namespace: kube-system
+```
+$ kubectl apply -f tiller.yml  
+$ helm init --service-account tiller
+
+4. Создадим директорию со следующей структурой
+```
+├── comment
+│ ├── Chart.yaml
+│ ├── charts
+│ ├── templates
+│ │ ├── deployment.yaml
+│ │ └── service.yaml
+│ └── values.yaml
+├── post
+│ ├── Chart.yaml
+│ ├── templates
+│ │ ├── deployment.yaml
+│ │ └── service.yaml
+│ └── values.yaml
+└── ui
+├── Chart.yaml
+├── templates
+│ ├── deployment.yaml
+│ ├── ingress.yaml
+| |── secret-certs.yaml
+│ └── service.yaml
+└── values.yaml
+```
+
+5. Изменим количество создаваемых POD'ов, для этого в comment и post зададим Replicas: 1
+
+6. Создадим _helpers.tpl для каждого сервиса.
+
+7. Добавим в reddit/requirements.yml репозиторий для установки mongoDB
+```
+---
+    dependencies:
+      - name: ui
+        version: "1.0.0"
+        repository: "file://../ui"
+    
+      - name: post
+        version: "1.0.0"
+        repository: "file://../post"
+    
+      - name: comment
+        version: "1.0.0"
+        repository: "file://../comment"
+
+      - name: mongodb
+        version: 7.7.0
+        repository: https://kubernetes-charts.storage.googleapis.com
+```
+
+7. Развернём приложение  
+$ helm dep update ./reddit  
+$ helm install reddit --name reddit-test
+
+8. Приложение не заработает. Теперь необходимо указать порты comment и post  
+ui/templates/deployment.yaml
+```
+        env:
+        - name: POST_SERVICE_HOST
+          value: {{ .Values.postHost | default (printf "%s-post" .Release.Name) }}
+        - name: POST_SERVICE_PORT
+          value: {{ .Values.postPort | default "5000" | quote }}
+        - name: COMMENT_SERVICE_HOST
+          value: {{ .Values.commentHost | default (printf "%s-comment" .Release.Name) }}
+        - name: COMMENT_SERVICE_PORT
+          value: {{ .Values.commentPort | default "9292" | quote }}
+```
+
+9. Так же дополним ui/values.yaml и reddit/values.yaml, после чего обновим все необходимые сервисы  
+$ helm dep update ./reddit  
+$ helm upgrade reddit-test ./reddit
+
+10. Проверяем, приложение успешно заработало
+
+11. Создадим новый пул узлов и установим Gitlab  
+$ helm repo add gitlab https://charts.gitlab.io  
+$ helm fetch gitlab/gitlab-omnibus --version 0.1.37 --untar
+
+12. Отредактируем файлы Gitlab для нашего проекта и запустим  
+$ helm install --name gitlab . -f values.yaml
+
+13. Добавляем в локальный hosts запись
+```
+35.190.199.223 gitlab-gitlab staging production
+```
+
+14. 
