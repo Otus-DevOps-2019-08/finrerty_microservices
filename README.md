@@ -1809,4 +1809,130 @@ $ helm install --name gitlab . -f values.yaml
 35.190.199.223 gitlab-gitlab staging production
 ```
 
-14. 
+14. Создаём новую группу, называем её по имени Docker ID - finrerty
+
+15. Добавляем 2 переменные - *CI_REGISTRY_USER* и CI_REGISTRY_PASSWORD
+
+16. Создаём проект reddit-deploy
+
+17. Формируем директорию Gitlab_ci со следующей структурой
+```
+Gitlab_ci
+├── comment
+├── post
+├── reddit-deploy
+└── ui
+```
+
+18. Переносим все коды и инициализируем git-репозиторий  
+$ git init  
+$ git remote add origin http://gitlab-gitlab/finrerty/ui.git  
+$ git add .  
+$ git commit -m “init”  
+$ git push origin master
+
+19. Аналогичные действия проделываем для post и comment
+
+20. Добавляем .gitlab-ci.yml для всех сервисов, убеждаемся, что сборки прошли успешно
+
+21. Изменим reddit-deploy/ui/templates/ingress.yml
+```
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: {{ template "ui.fullname" . }}
+  annotations:
+    kubernetes.io/ingress.class: {{ .Values.ingress.class }}
+spec:
+  rules:
+  - host: {{ .Values.ingress.host | default .Release.Name }}
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: {{ template "ui.fullname" . }}
+          servicePort: {{ .Values.service.externalPort }}
+```
+
+22. Так же добавим в values, что используется nginx
+```
+ingress:
+  class: nginx
+```
+
+23. Создадим новый бранч в репозитории ui и закоммитим  
+$ git checkout -b feature/3  
+$ git add .  
+$ git commit -m "Add review feature"  
+$ git push origin feature/3
+
+24. Добавим в .gitlab-ci.yml раздел "stop_review" для удаления окружения после окончания работы
+```
+stop_review:
+  stage: cleanup
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - install_dependencies
+    - delete
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    action: stop
+  when: manual
+  allow_failure: true
+  only:
+    refs:
+      - branches
+    kubernetes: active
+  except:
+    - master
+```
+и раздел со средами
+```
+stages:
+  - build
+  - test
+  - review
+  - release
+  - cleanup
+review:
+  stage: review
+  …
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    url: http://$CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+    on_stop: stop_review
+  …
+```
+
+25. Так же добавим функцию удаления окружения и запушим изменения
+```
+function delete() {
+    track="${1-stable}"
+    name="$CI_ENVIRONMENT_SLUG"
+    helm delete "$name" --purge || true
+  }
+```
+$ git add .  
+$ git commit -m "Add review feature"  
+$ git push origin feature/3
+
+26. Добавим адрес finrerty-ui-feature-3 в hosts и перейдём по нему
+```
+35.190.199.223 finrerty-ui-feature-3
+```
+
+27. Запустим удаление окружения и убедимся, что всё работает
+
+28. Создадим файл reddit-deploy/.gitlab-ci.yml для разделения на staging и production
+
+29. Внесём изменения в COMMENT и UI файлы, разместим все получившиеся файлы в папках репозитория
+
+
+## Дополнительное задание №1
+
+- Для автоматического перехода от staging к production изменим в файлах строку:
+```
+when: on_success
+```
