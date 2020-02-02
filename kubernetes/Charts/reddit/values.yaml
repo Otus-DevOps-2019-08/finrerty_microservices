@@ -1,0 +1,20 @@
+comment:
+  image:
+    repository: finrerty/comment
+    tag: latest
+  service:
+    externalPort: 9292
+  
+post:
+  image:
+    repository: finrerty/post
+    tag: latest
+  service:
+    externalPort: 5000
+
+ui:
+  image:
+    repository: finrerty/ui
+    tag: latest
+    service:
+      externalPort: 9292

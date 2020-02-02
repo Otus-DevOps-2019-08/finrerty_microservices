@@ -1687,3 +1687,252 @@ data:
   tls.key: %BASE64%
 ```
 
+# HomeWork №22
+
+1. Создадим новую ветку  
+$ git checkout -b kubernetes-4
+
+2. Установим Helm  
+$ wget https://get.helm.sh/helm-v2.13.1-linux-amd64.tar.gz  
+$ tar xfvz helm-v2.13.1-linux-amd64.tar.gz  
+$ sudo mv linux-amd64/helm /usr/bin
+
+3. Установим и запустим Tiller  
+$ nano tiller.yml
+```
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tiller
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: tiller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: tiller
+    namespace: kube-system
+```
+$ kubectl apply -f tiller.yml  
+$ helm init --service-account tiller
+
+4. Создадим директорию со следующей структурой
+```
+├── comment
+│ ├── Chart.yaml
+│ ├── charts
+│ ├── templates
+│ │ ├── deployment.yaml
+│ │ └── service.yaml
+│ └── values.yaml
+├── post
+│ ├── Chart.yaml
+│ ├── templates
+│ │ ├── deployment.yaml
+│ │ └── service.yaml
+│ └── values.yaml
+└── ui
+├── Chart.yaml
+├── templates
+│ ├── deployment.yaml
+│ ├── ingress.yaml
+| |── secret-certs.yaml
+│ └── service.yaml
+└── values.yaml
+```
+
+5. Изменим количество создаваемых POD'ов, для этого в comment и post зададим Replicas: 1
+
+6. Создадим _helpers.tpl для каждого сервиса.
+
+7. Добавим в reddit/requirements.yml репозиторий для установки mongoDB
+```
+---
+    dependencies:
+      - name: ui
+        version: "1.0.0"
+        repository: "file://../ui"
+    
+      - name: post
+        version: "1.0.0"
+        repository: "file://../post"
+    
+      - name: comment
+        version: "1.0.0"
+        repository: "file://../comment"
+
+      - name: mongodb
+        version: 7.7.0
+        repository: https://kubernetes-charts.storage.googleapis.com
+```
+
+7. Развернём приложение  
+$ helm dep update ./reddit  
+$ helm install reddit --name reddit-test
+
+8. Приложение не заработает. Теперь необходимо указать порты comment и post  
+ui/templates/deployment.yaml
+```
+        env:
+        - name: POST_SERVICE_HOST
+          value: {{ .Values.postHost | default (printf "%s-post" .Release.Name) }}
+        - name: POST_SERVICE_PORT
+          value: {{ .Values.postPort | default "5000" | quote }}
+        - name: COMMENT_SERVICE_HOST
+          value: {{ .Values.commentHost | default (printf "%s-comment" .Release.Name) }}
+        - name: COMMENT_SERVICE_PORT
+          value: {{ .Values.commentPort | default "9292" | quote }}
+```
+
+9. Так же дополним ui/values.yaml и reddit/values.yaml, после чего обновим все необходимые сервисы  
+$ helm dep update ./reddit  
+$ helm upgrade reddit-test ./reddit
+
+10. Проверяем, приложение успешно заработало
+
+11. Создадим новый пул узлов и установим Gitlab  
+$ helm repo add gitlab https://charts.gitlab.io  
+$ helm fetch gitlab/gitlab-omnibus --version 0.1.37 --untar
+
+12. Отредактируем файлы Gitlab для нашего проекта и запустим  
+$ helm install --name gitlab . -f values.yaml
+
+13. Добавляем в локальный hosts запись
+```
+35.190.199.223 gitlab-gitlab staging production
+```
+
+14. Создаём новую группу, называем её по имени Docker ID - finrerty
+
+15. Добавляем 2 переменные - *CI_REGISTRY_USER* и CI_REGISTRY_PASSWORD
+
+16. Создаём проект reddit-deploy
+
+17. Формируем директорию Gitlab_ci со следующей структурой
+```
+Gitlab_ci
+├── comment
+├── post
+├── reddit-deploy
+└── ui
+```
+
+18. Переносим все коды и инициализируем git-репозиторий  
+$ git init  
+$ git remote add origin http://gitlab-gitlab/finrerty/ui.git  
+$ git add .  
+$ git commit -m “init”  
+$ git push origin master
+
+19. Аналогичные действия проделываем для post и comment
+
+20. Добавляем .gitlab-ci.yml для всех сервисов, убеждаемся, что сборки прошли успешно
+
+21. Изменим reddit-deploy/ui/templates/ingress.yml
+```
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: {{ template "ui.fullname" . }}
+  annotations:
+    kubernetes.io/ingress.class: {{ .Values.ingress.class }}
+spec:
+  rules:
+  - host: {{ .Values.ingress.host | default .Release.Name }}
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: {{ template "ui.fullname" . }}
+          servicePort: {{ .Values.service.externalPort }}
+```
+
+22. Так же добавим в values, что используется nginx
+```
+ingress:
+  class: nginx
+```
+
+23. Создадим новый бранч в репозитории ui и закоммитим  
+$ git checkout -b feature/3  
+$ git add .  
+$ git commit -m "Add review feature"  
+$ git push origin feature/3
+
+24. Добавим в .gitlab-ci.yml раздел "stop_review" для удаления окружения после окончания работы
+```
+stop_review:
+  stage: cleanup
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - install_dependencies
+    - delete
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    action: stop
+  when: manual
+  allow_failure: true
+  only:
+    refs:
+      - branches
+    kubernetes: active
+  except:
+    - master
+```
+и раздел со средами
+```
+stages:
+  - build
+  - test
+  - review
+  - release
+  - cleanup
+review:
+  stage: review
+  …
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    url: http://$CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+    on_stop: stop_review
+  …
+```
+
+25. Так же добавим функцию удаления окружения и запушим изменения
+```
+function delete() {
+    track="${1-stable}"
+    name="$CI_ENVIRONMENT_SLUG"
+    helm delete "$name" --purge || true
+  }
+```
+$ git add .  
+$ git commit -m "Add review feature"  
+$ git push origin feature/3
+
+26. Добавим адрес finrerty-ui-feature-3 в hosts и перейдём по нему
+```
+35.190.199.223 finrerty-ui-feature-3
+```
+
+27. Запустим удаление окружения и убедимся, что всё работает
+
+28. Создадим файл reddit-deploy/.gitlab-ci.yml для разделения на staging и production
+
+29. Внесём изменения в COMMENT и UI файлы, разместим все получившиеся файлы в папках репозитория
+
+
+## Дополнительное задание №1
+
+- Для автоматического перехода от staging к production изменим в файлах строку:
+```
+when: on_success
+```
